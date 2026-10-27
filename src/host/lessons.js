@@ -16,8 +16,8 @@ import { cleanResponse, earlierGrade, fixItem, itemForCheck, normalizeItemVerdic
 import { createConceptState, masteryPercent, recommendNext } from '../core/mastery.js'
 import { createCard, review } from '../core/srs.js'
 import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
-import { generateJson, generateSteps, TutorError } from './generate.js'
-import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, explainPrompt, flashcardsPrompt, gradePrompt, handoutPrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
+import { generateJson, generateSteps, generateText, TutorError } from './generate.js'
+import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, explainPrompt, explorePrompt, flashcardsPrompt, gradePrompt, handoutPrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
 
 const EVENTS_KEPT = 200
 // Questions and re-explanations kept per lesson, replayed where they were asked.
@@ -28,7 +28,7 @@ const BOARD_JOBS = ['lesson/board', 'lesson/prefetch']
 // Earlier open answers to a fixed question the grader looks at again.
 const EARLIER_OPEN = 3
 
-export function createLessons({ store, llm, jobs, courses, learner, now = () => new Date() }) {
+export function createLessons({ store, llm, jobs, courses, learner, research = null, now = () => new Date() }) {
   const stamp = () => now().toISOString()
 
   async function context(courseId, lessonId) {
@@ -643,6 +643,35 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }
   }
 
+  // A question beyond the lesson: look it up or solve it, in text. Research
+  // uses DSH's own web service; without it the answer says so and stays on the
+  // lesson's material. This adds no evidence and never moves the gate.
+  async function explore({ courseId, lessonId, mode, request }) {
+    const { course, row } = await context(courseId, lessonId)
+    const chosen = mode === 'research' ? 'research' : 'solve'
+    const ask = text(request, 1200)
+    if (!ask) throw new TutorError('invalid', 'Write what you want to look up or solve')
+    const board = await store.readJson(store.paths.board(courseId, lessonId), null)
+    const materials = await readMaterials(store, course.materialIds ?? [])
+    const found = chosen === 'research' && research
+      ? await research.run({ goal: ask, language: course.language })
+      : { sources: [], skipped: 'unavailable' }
+    const answer = await generateText(llm, {
+      prompt: explorePrompt({
+        mode: chosen,
+        request: ask,
+        lesson: row.lesson,
+        board: board ? boardToPlainText(board, { maxChars: 8000 }) : '',
+        passages: passagesFor(materials, `${row.lesson.title} ${ask}`, 6000),
+        sources: found.sources,
+        language: course.language,
+        skipped: found.skipped,
+      }),
+      maxTokens: 3000,
+    })
+    return { mode: chosen, answer, sources: chosen === 'research' ? found.sources ?? [] : [], skipped: found.skipped ?? null }
+  }
+
   // A remedial lesson for the concepts a completion is weak on, unless the
   // lesson after this one already is that lesson (retrying must not spam).
   async function ensureRemedial(course, row, lessonId, recommendation) {
@@ -876,7 +905,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }).catch(() => undefined)
   }
 
-  return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, handout, record, assess, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
+  return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, handout, record, assess, explore, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
 }
 
 function pushEvent(progress, event) {

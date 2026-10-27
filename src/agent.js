@@ -20,6 +20,7 @@ export const TOOL_GUIDE = `## Teaching tools (Aha Tutor)
 - aha_course: when the learner wants to learn a whole subject systematically, design a personal course in Aha Tutor instead of teaching everything in chat.
 - aha_cheatsheet: make a printable cheat sheet before exams or at the end of a topic.
 - aha_learner: read what Aha remembers about the learner (background, goals, weak spots, active courses) before planning or when personalizing.
+- Animation and video: when the learner wants something to move, use an installed animation plugin's tools (Manim or Remotion) if the session has them; the whiteboard is for static explanation, figures and charts. Never pretend an animation was made when no such tool is available.
 Teach for understanding: ask what the learner already knows, check often, and do not just hand over homework answers.`
 
 const MODES = ['explain', 'solve', 'visualize']

@@ -51,7 +51,7 @@ export function apply(ctx) {
   const learner = createLearner({ store, llm, logger })
   const research = createResearch({ getWeb: () => ctx.get?.('web'), llm, logger })
   const courses = createCourses({ store, llm, jobs, research })
-  const lessons = createLessons({ store, llm, jobs, courses, learner })
+  const lessons = createLessons({ store, llm, jobs, courses, learner, research })
   const studio = createStudio({ store, llm, jobs, uiLanguage: () => uiLanguage })
   const projects = createProjects({ store, llm, jobs, courses })
   const samples = createSamples({ dirUrl: new URL('../samples/', import.meta.url), courses })

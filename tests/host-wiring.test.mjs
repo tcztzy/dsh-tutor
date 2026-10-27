@@ -21,7 +21,10 @@ function fakeLlm(calls) {
         async *stream(request) {
           calls.push({ request })
           const prompt = request.messages[0].content[0].text
-          const text = prompt.includes('Design the course blueprint') ? BLUEPRINT : prompt.includes('Score how well the explanation') ? EXPLANATION_GRADE : '{"questions":[]}'
+          const text = prompt.includes('Design the course blueprint') ? BLUEPRINT
+            : prompt.includes('Score how well the explanation') ? EXPLANATION_GRADE
+              : prompt.includes('Answer in Markdown') ? '位移向右时回复力向左，所以写成负号。'
+                : '{"questions":[]}'
           yield { type: 'block-start', index: 0, blockType: 'text' }
           for (const piece of text.match(/[\s\S]{1,20}/gu)) yield { type: 'text-delta', index: 0, text: piece }
           yield { type: 'finish', reason: { kind: 'stop' } }
@@ -155,6 +158,16 @@ test('the host row serves the browser channel, HTTP routes and the preset runtim
     assert.equal(blocked.completed, false)
     assert.equal(blocked.gate.passed, false)
     assert.equal(blocked.gate.blocking[0].reason, 'qualitative-missing')
+
+    // Looking something up or solving it adds no evidence and moves no gate.
+    const explored = await call('lesson/explore', { courseId: gated.courseId, lessonId: gatedLesson.id, mode: 'research', request: '为什么负号表示方向相反？' })
+    assert.equal(explored.mode, 'research')
+    assert.equal(explored.skipped, 'unavailable', 'this harness has no web service, and the answer says so')
+    assert.deepEqual(explored.sources, [])
+    assert.match(explored.answer, /负号/u)
+    const solved = await call('lesson/explore', { courseId: gated.courseId, lessonId: gatedLesson.id, mode: 'solve', request: '解 $x^2=4$' })
+    assert.equal(solved.mode, 'solve')
+    assert.equal((await call('lesson/complete', { courseId: gated.courseId, lessonId: gatedLesson.id })).blocked, true, 'exploring never completes a lesson')
 
     // Quiz evidence never clears a qualitative concept; an explanation does.
     for (let attempt = 0; attempt < 3; attempt += 1) {

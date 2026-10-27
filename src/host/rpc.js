@@ -159,6 +159,12 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
       conceptId: need(payload, 'conceptId', 'cpt'),
       explanation: typeof payload.explanation === 'string' ? payload.explanation.slice(0, 4000) : '',
     }),
+    'lesson/explore': payload => lessons.explore({
+      courseId: need(payload, 'courseId', 'crs'),
+      lessonId: need(payload, 'lessonId', 'les'),
+      mode: payload.mode === 'research' ? 'research' : 'solve',
+      request: typeof payload.request === 'string' ? payload.request.slice(0, 1200) : '',
+    }),
     'lesson/handout': payload => lessons.handout({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les'), force: payload.force === true }),
     'lesson/practice': payload => lessons.practice({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les') }),
     'unit/sheet': payload => lessons.unitSheet({ courseId: need(payload, 'courseId', 'crs'), unitId: need(payload, 'unitId', 'unt'), force: payload.force === true }),

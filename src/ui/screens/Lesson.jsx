@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BoardExport } from '../BoardExport.jsx'
 import { Classroom } from '../Classroom.jsx'
 import { ErrorLine, Modal, Spinner } from '../components.jsx'
+import { RichText } from '../markdown.jsx'
 import { useApp, useLoad } from '../hooks.js'
 import { useVideoExport } from '../useVideoExport.js'
 
@@ -13,6 +14,7 @@ export function LessonScreen({ courseId, lessonId }) {
   const [error, setError] = useState(null)
   const [finished, setFinished] = useState(false)
   const [assessing, setAssessing] = useState(false)
+  const [exploring, setExploring] = useState(false)
   const [version, setVersion] = useState(0)
   const saveTimer = useRef(null)
   const video = useVideoExport()
@@ -65,6 +67,7 @@ export function LessonScreen({ courseId, lessonId }) {
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => navigate('course', { courseId })}>← {t('backToCourse')}</button>
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => navigate('practice', { courseId, lessonId })}>{t('practice')}</button>
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" disabled={!lesson.concepts?.length} onClick={() => setAssessing(true)}>{t('assess')}</button>
+        <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => setExploring(true)}>{t('explore')}</button>
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" disabled={!steps.length} title={t('handoutHint')} onClick={() => navigate('handout', { courseId, lessonId })}>{t('handout')}</button>
         <BoardExport steps={steps} title={lesson.title} />
         {video.exporting
@@ -75,6 +78,7 @@ export function LessonScreen({ courseId, lessonId }) {
     /> : <Spinner label={t('preparingLesson')} />}
     {finished ? <Completion courseId={courseId} lessonId={lessonId} onClose={() => setFinished(false)} /> : null}
     {assessing ? <Assess courseId={courseId} lessonId={lessonId} concepts={lesson.concepts ?? []} onClose={() => setAssessing(false)} /> : null}
+    {exploring ? <Explore courseId={courseId} lessonId={lessonId} onClose={() => setExploring(false)} /> : null}
   </div>
 }
 
@@ -160,6 +164,55 @@ function Completion({ courseId, lessonId, onClose }) {
         <button type="button" className="aha-btn" onClick={() => navigate('practice', { courseId, lessonId })}>{t('doPractice')}</button>
         <button type="button" className="aha-btn" onClick={() => navigate('handout', { courseId, lessonId })}>{t('handoutOfLesson')}</button>
         <button type="button" className="aha-btn" data-kind="ghost" onClick={() => navigate('course', { courseId }, { replace: true })}>{t('backToCourse')}</button>
+      </div>
+    </div>}
+    <ErrorLine error={error} />
+  </Modal>
+}
+
+// A question beyond the lesson: web research or a worked solution, answered as
+// text. It never adds evidence, so it cannot move the mastery gate.
+function Explore({ courseId, lessonId, onClose }) {
+  const { api, t } = useApp()
+  const [mode, setMode] = useState('research')
+  const [request, setRequest] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState(null)
+
+  async function submit() {
+    setBusy(true)
+    setError(null)
+    try {
+      setResult(await api.call('lesson/explore', { courseId, lessonId, mode, request }))
+    } catch (failure) {
+      setError(failure)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <Modal title={t('explore')} onClose={onClose}>
+    {!result ? <>
+      <div className="aha-row">
+        {['research', 'solve'].map(value => <button key={value} type="button" className="aha-chip" data-active={mode === value} onClick={() => setMode(value)}>{t(value === 'research' ? 'exploreResearch' : 'exploreSolve')}</button>)}
+      </div>
+      <p>{t('exploreHint')}</p>
+      <textarea className="aha-textarea" rows={4} value={request} placeholder={t('explorePlaceholder')} onChange={event => setRequest(event.currentTarget.value)} />
+      <div className="aha-row">
+        <button type="button" className="aha-btn" data-kind="primary" disabled={busy || !request.trim()} onClick={submit}>{t('exploreSubmit')}</button>
+      </div>
+      {busy ? <Spinner /> : null}
+    </> : <div className="aha-col">
+      <RichText text={result.answer} />
+      {result.mode === 'research' && result.skipped ? <p className="aha-feedback">{t('exploreNoSearch')}</p> : null}
+      {result.sources?.length ? <div>
+        <strong>{t('exploreSources')}</strong>
+        <ol>{result.sources.map(source => <li key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a></li>)}</ol>
+      </div> : null}
+      <div className="aha-row">
+        <button type="button" className="aha-btn" onClick={() => { setResult(null); setRequest('') }}>{t('exploreAgain')}</button>
+        <button type="button" className="aha-btn" data-kind="primary" onClick={onClose}>{t('close')}</button>
       </div>
     </div>}
     <ErrorLine error={error} />

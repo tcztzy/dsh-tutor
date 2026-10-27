@@ -603,6 +603,27 @@ export function assistPrompt({ mode, request, language, passages, history, learn
   }
 }
 
+// A question beyond the lesson: look it up on the web, or solve it, and answer
+// in text the learner can read, with sources they can open.
+export function explorePrompt({ mode, request, lesson, board, passages, sources, language, skipped }) {
+  const cited = (Array.isArray(sources) ? sources : [])
+    .map((source, index) => `[${index + 1}] ${source.title} — ${source.url}${source.snippet ? `\n    ${source.snippet}` : ''}`)
+    .join('\n')
+  return {
+    system: join(PERSONA, `You answer one learner question at the level of the lesson they are in.${mode === 'research' ? ' Ground every external claim in the numbered sources you are given and cite them as [n]; when they do not cover the question, say so instead of guessing.' : ' Show the working step by step and end with the answer.'} ${languageRule(language)}`),
+    user: join(
+      block('lesson', `${lesson.title}: ${(lesson.objectives ?? []).join('; ')}`),
+      block('board_so_far', board),
+      block('source_passages', passages),
+      mode === 'research' ? block('web_sources', cited || `(no web search available${skipped ? `: ${skipped}` : ''})`) : '',
+      block('question', request),
+      mode === 'research'
+        ? 'Answer in Markdown, 150–400 words (or 250–600 Chinese characters): what the sources say, what it means for this lesson, and which sources you used. Cite with [n], matching the numbered list. Do not repeat the source list — the app shows it.'
+        : 'Answer in Markdown, 150–350 words (or 250–550 Chinese characters): restate the problem in one line, then numbered steps, then the answer. Use inline math $…$ for formulas.',
+    ),
+  }
+}
+
 export function shortPrompt({ topic, passages, language }) {
   return {
     system: join(PERSONA, BOARD_SPEC, STEP_SPEC, languageRule(language), JSONL_ONLY),
