@@ -12,6 +12,7 @@ export function LessonScreen({ courseId, lessonId }) {
   const [source, setSource] = useState(null)
   const [error, setError] = useState(null)
   const [finished, setFinished] = useState(false)
+  const [assessing, setAssessing] = useState(false)
   const [version, setVersion] = useState(0)
   const saveTimer = useRef(null)
   const video = useVideoExport()
@@ -63,6 +64,7 @@ export function LessonScreen({ courseId, lessonId }) {
       header={({ steps }) => <>
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => navigate('course', { courseId })}>← {t('backToCourse')}</button>
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => navigate('practice', { courseId, lessonId })}>{t('practice')}</button>
+        <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" disabled={!lesson.concepts?.length} onClick={() => setAssessing(true)}>{t('assess')}</button>
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" disabled={!steps.length} title={t('handoutHint')} onClick={() => navigate('handout', { courseId, lessonId })}>{t('handout')}</button>
         <BoardExport steps={steps} title={lesson.title} />
         {video.exporting
@@ -72,7 +74,55 @@ export function LessonScreen({ courseId, lessonId }) {
       </>}
     /> : <Spinner label={t('preparingLesson')} />}
     {finished ? <Completion courseId={courseId} lessonId={lessonId} onClose={() => setFinished(false)} /> : null}
+    {assessing ? <Assess courseId={courseId} lessonId={lessonId} concepts={lesson.concepts ?? []} onClose={() => setAssessing(false)} /> : null}
   </div>
+}
+
+// The learner explains a concept; the host scores it and the gate records the
+// result. The score is evidence, not a verdict: the gate decides the pass.
+function Assess({ courseId, lessonId, concepts, onClose }) {
+  const { api, t } = useApp()
+  const [conceptId, setConceptId] = useState(concepts[0]?.id ?? '')
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState(null)
+  const concept = concepts.find(item => item.id === conceptId)
+
+  async function submit() {
+    setBusy(true)
+    setError(null)
+    try {
+      setResult(await api.call('lesson/assess', { courseId, lessonId, conceptId, explanation: text }))
+    } catch (failure) {
+      setError(failure)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <Modal title={t('assess')} onClose={onClose}>
+    {concepts.length > 1 ? <div className="aha-row">
+      {concepts.map(item => <button key={item.id} type="button" className="aha-chip" data-active={item.id === conceptId} onClick={() => { setConceptId(item.id); setResult(null) }}>{item.name}</button>)}
+    </div> : null}
+    {!result ? <>
+      <p>{t('assessHint')}</p>
+      <textarea className="aha-textarea" rows={6} value={text} placeholder={t('assessPlaceholder', { concept: concept?.name ?? '' })} onChange={event => setText(event.currentTarget.value)} />
+      <div className="aha-row">
+        <button type="button" className="aha-btn" data-kind="primary" disabled={busy || !text.trim()} onClick={submit}>{t('assessSubmit')}</button>
+      </div>
+      {busy ? <Spinner /> : null}
+    </> : <div className="aha-col">
+      <div className="aha-feedback" data-ok={result.passed ? 'true' : undefined}>{t('assessScore', { score: Math.round(result.score * 100) })} · {result.passed ? t('assessPassed') : t('assessFailed')}</div>
+      {result.feedback ? <p>{result.feedback}</p> : null}
+      {result.missing?.length ? <ul>{result.missing.map(item => <li key={item}>{item}</li>)}</ul> : null}
+      <div className="aha-row">
+        <button type="button" className="aha-btn" onClick={() => { setResult(null); setText('') }}>{t('assessAgain')}</button>
+        <button type="button" className="aha-btn" data-kind="primary" onClick={onClose}>{t('close')}</button>
+      </div>
+    </div>}
+    <ErrorLine error={error} />
+  </Modal>
 }
 
 function Completion({ courseId, lessonId, onClose }) {

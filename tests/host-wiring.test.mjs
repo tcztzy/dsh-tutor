@@ -6,7 +6,8 @@ import { test } from 'node:test'
 
 import { getRuntime } from '../src/host/runtime.js'
 
-const BLUEPRINT = JSON.stringify({ title: '线性代数', emoji: '🧮', units: [{ title: '向量', lectures: [{ title: '基础', lessons: [{ title: '什么是向量', concepts: ['向量'] }] }] }], projects: [] })
+const BLUEPRINT = JSON.stringify({ title: '线性代数', emoji: '🧮', units: [{ title: '向量', lectures: [{ title: '基础', lessons: [{ title: '什么是向量', concepts: [{ name: '向量', type: 'concept' }] }] }] }], projects: [] })
+const EXPLANATION_GRADE = '{"score":0.9,"missing":[],"feedback":"抓住了方向与大小。"}'
 
 function fakeLlm(calls) {
   return {
@@ -19,7 +20,8 @@ function fakeLlm(calls) {
         inputModalities: ['text'],
         async *stream(request) {
           calls.push({ request })
-          const text = request.messages[0].content[0].text.includes('Design the course blueprint') ? BLUEPRINT : '{"questions":[]}'
+          const prompt = request.messages[0].content[0].text
+          const text = prompt.includes('Design the course blueprint') ? BLUEPRINT : prompt.includes('Score how well the explanation') ? EXPLANATION_GRADE : '{"questions":[]}'
           yield { type: 'block-start', index: 0, blockType: 'text' }
           for (const piece of text.match(/[\s\S]{1,20}/gu)) yield { type: 'text-delta', index: 0, text: piece }
           yield { type: 'finish', reason: { kind: 'stop' } }
@@ -146,13 +148,22 @@ test('the host row serves the browser channel, HTTP routes and the preset runtim
     await follow(await call('course/intake', { courseId: gated.courseId, timeline: 'intensive' }))
     const gatedDetail = await call('course/get', { courseId: gated.courseId })
     const gatedLesson = gatedDetail.course.units[0].lectures[0].lessons[0]
+    const conceptId = gatedLesson.concepts[0].id
+    assert.equal(gatedLesson.concepts[0].type, 'concept', 'the blueprint can mark a concept type')
     const blocked = await call('lesson/complete', { courseId: gated.courseId, lessonId: gatedLesson.id })
     assert.equal(blocked.blocked, true)
     assert.equal(blocked.completed, false)
     assert.equal(blocked.gate.passed, false)
+    assert.equal(blocked.gate.blocking[0].reason, 'qualitative-missing')
+
+    // Quiz evidence never clears a qualitative concept; an explanation does.
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await call('lesson/record', { courseId: gated.courseId, lessonId: gatedLesson.id, evidence: { kind: 'practice', score: 1, confidence: 'sure' } })
     }
+    assert.equal((await call('lesson/complete', { courseId: gated.courseId, lessonId: gatedLesson.id })).blocked, true)
+    const assessed = await call('lesson/assess', { courseId: gated.courseId, lessonId: gatedLesson.id, conceptId, explanation: '向量是既有方向又有大小的量。' })
+    assert.equal(assessed.score, 0.9)
+    assert.equal(assessed.passed, true)
     const cleared = await call('lesson/complete', { courseId: gated.courseId, lessonId: gatedLesson.id })
     assert.equal(cleared.completed, true)
     assert.equal(cleared.gate.passed, true)

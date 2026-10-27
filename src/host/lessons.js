@@ -8,7 +8,7 @@ import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeSte
 import { boardToPlainText } from '../core/board-script.js'
 import { conceptIndex, conceptTypeMap, findLesson, insertLesson, lessonAfter, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text } from '../core/course-model.js'
 import { answersTo, correctEvidence, itemKey, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
-import { lessonGate } from '../core/gate.js'
+import { QUALITATIVE_PASS, lessonGate, recordQualitative } from '../core/gate.js'
 import { OBJECTIVE_KINDS } from '../core/grading.js'
 import { assertId, newId } from '../core/ids.js'
 import { cleanResponse, earlierGrade, fixItem, itemForCheck, normalizeItemVerdict, regrade, responseText } from '../core/item-fix.js'
@@ -16,7 +16,7 @@ import { createConceptState, masteryPercent, recommendNext } from '../core/maste
 import { createCard, review } from '../core/srs.js'
 import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { generateJson, generateSteps, TutorError } from './generate.js'
-import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, handoutPrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
+import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, explainPrompt, flashcardsPrompt, gradePrompt, handoutPrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
 
 const EVENTS_KEPT = 200
 // Questions and re-explanations kept per lesson, replayed where they were asked.
@@ -609,6 +609,39 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     return { ok: true }
   }
 
+  // The learner explains a concept in their own words. The model scores the
+  // explanation against the rubric; the gate, not the model, decides whether
+  // that score clears the qualitative bar.
+  async function assess({ courseId, lessonId, conceptId, explanation }) {
+    const { course, row } = await context(courseId, lessonId)
+    const concept = conceptIndex(course).get(conceptId)
+    if (!concept) throw new TutorError('not-found', 'Concept not found')
+    const answer = text(explanation, 4000)
+    if (!answer) throw new TutorError('invalid', 'Write the explanation first')
+    const result = await generateJson(llm, {
+      prompt: explainPrompt({ course, lesson: row.lesson, concept, language: course.language, explanation: answer }),
+      maxTokens: 1200,
+    })
+    const score = Math.min(1, Math.max(0, Number(result?.score)))
+    if (!Number.isFinite(score)) throw new TutorError('bad-output', 'The model did not score the explanation. Try again, or pick a stronger model in settings.')
+    const passed = score >= QUALITATIVE_PASS
+    const progress = await store.updateJson(store.paths.progress(courseId), null, value => {
+      const next = value ?? { courseId, lessons: {}, concepts: {}, reviews: {}, events: [] }
+      next.concepts ??= {}
+      next.concepts[conceptId] = recordQualitative(next.concepts[conceptId] ?? createConceptState(conceptId, concept.name), { score, passed, at: stamp() })
+      pushEvent(next, { type: 'assess', lessonId, conceptId, score, passed, at: stamp() })
+      return next
+    })
+    const states = row.lesson.concepts.map(entry => progress.concepts?.[entry.id] ?? createConceptState(entry.id, entry.name))
+    return {
+      score,
+      passed,
+      feedback: text(result?.feedback, 1200),
+      missing: (Array.isArray(result?.missing) ? result.missing : []).map(item => text(item, 200)).filter(Boolean).slice(0, 3),
+      gate: lessonGate(states, conceptTypeMap(course)),
+    }
+  }
+
   // A remedial lesson for the concepts a completion is weak on, unless the
   // lesson after this one already is that lesson (retrying must not spam).
   async function ensureRemedial(course, row, lessonId, recommendation) {
@@ -829,7 +862,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }).catch(() => undefined)
   }
 
-  return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, handout, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
+  return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, handout, record, assess, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
 }
 
 function pushEvent(progress, event) {

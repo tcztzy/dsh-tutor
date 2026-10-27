@@ -166,12 +166,12 @@ export function blueprintPrompt({ goal, language, intake, materialsSummary, prof
 - Order lessons so every prerequisite comes first. Start from where the learner is, not from zero if they already know the basics.
 - If materials were provided, follow their scope and order where sensible.
 - If web sources are given, use them for scope, ordering and current practice, and prefer what several of them agree on.
-- Each lesson lists 1–3 learning objectives (observable: "compute…", "explain why…") and 1–4 key concepts (short names).
+- Each lesson lists 1–3 learning objectives (observable: "compute…", "explain why…") and 1–4 key concepts. Each concept is an object {"name":"short name","type":"memory|concept|procedure|design","prerequisites":["names of concepts taught earlier"]}. memory = a fact to recall; procedure = a method to carry out; concept = an idea the learner should explain in their own words; design = an open-ended judgement with trade-offs. Most concepts are memory or procedure; use concept or design when understanding matters more than recall. Prerequisites are names of concepts from earlier lessons, never the concept itself.
 - Give each lesson a "depth": "intuition" (a feel for the idea through pictures and cases), "definition" (stating it precisely), "derivation" (deriving or proving it), "application" (using it on problems) or "extension" (edge cases, generalizations, connections). Let ideas be felt before they are formalized.
 - Add 1–3 projects (one is enough for a short course) that apply the course to something real for this learner, placed after the units they depend on. Use "kind":"code" only when the project is mainly programming or data work.
 - Pick one emoji that fits the subject.
 
-Return {"title":"…","subtitle":"one line promise of the course","emoji":"…","summary":"2–3 sentences: who it is for, what they will be able to do","level":"beginner|intermediate|advanced","units":[{"title":"…","summary":"…","objectives":["…"],"lectures":[{"title":"…","summary":"…","lessons":[{"title":"…","summary":"…","objectives":["…"],"concepts":["…"],"estMinutes":15,"depth":"intuition|definition|derivation|application|extension"}]}]}],"projects":[{"title":"…","kind":"code|writing|analysis|design|practice|other","brief":"…","skills":["…"],"unitIndex":<0-based unit after which it fits>,"milestones":["…"],"rubric":[{"criterion":"…","points":10}]}]}`,
+Return {"title":"…","subtitle":"one line promise of the course","emoji":"…","summary":"2–3 sentences: who it is for, what they will be able to do","level":"beginner|intermediate|advanced","units":[{"title":"…","summary":"…","objectives":["…"],"lectures":[{"title":"…","summary":"…","lessons":[{"title":"…","summary":"…","objectives":["…"],"concepts":[{"name":"…","type":"memory|concept|procedure|design","prerequisites":["…"]}],"estMinutes":15,"depth":"intuition|definition|derivation|application|extension"}]}]}],"projects":[{"title":"…","kind":"code|writing|analysis|design|practice|other","brief":"…","skills":["…"],"unitIndex":<0-based unit after which it fits>,"milestones":["…"],"rubric":[{"criterion":"…","points":10}]}]}`,
     ),
   }
 }
@@ -219,7 +219,7 @@ export function reworkPrompt({ outline, unitTitle, lectureTitle, lesson, mode, l
       mode === 'split'
         ? 'Split this lesson into two consecutive lessons that together cover everything it covers. Each teaches one coherent idea in 10–20 minutes, and the first prepares the second. Stay consistent with the rest of the course.'
         : 'Rewrite this lesson to go deeper. Keep its topic and its place in the course, but aim at why it works, its edge cases and its connections to the rest of the course; adjust the objectives, concepts and minutes (at most 25) to match.',
-      'Return {"lessons":[{"title":"…","summary":"…","objectives":["…"],"concepts":["…"],"estMinutes":15,"depth":"intuition|definition|derivation|application|extension"}]}',
+      'Return {"lessons":[{"title":"…","summary":"…","objectives":["…"],"concepts":[{"name":"…","type":"memory|concept|procedure|design"}],"estMinutes":15,"depth":"intuition|definition|derivation|application|extension"}]}',
     ),
   }
 }
@@ -348,6 +348,28 @@ export function gradePrompt({ item, response, language }) {
       work
         ? `Return {${GRADE_FIELDS},"wrongStep":"the first wrong line of the learner's working, copied exactly, or empty when every line is right","why":"one sentence: what is wrong in that line","fix":"that line written correctly, with inline math $…$"}`
         : `Return {${GRADE_FIELDS}}`,
+    ),
+  }
+}
+
+// The learner explains a concept in their own words; the tutor scores the
+// explanation against a rubric. The score is evidence — the gate, not the
+// model, decides whether it clears the bar.
+export function explainPrompt({ course, lesson, concept, language, explanation }) {
+  return {
+    system: join(PERSONA, `You assess whether a learner truly understands a concept from their own explanation. Judge meaning, not wording: a correct idea in plain words scores high, a memorized phrase with no grasp scores low. Never reward confidence alone. ${languageRule(language)}`, JSON_ONLY),
+    user: join(
+      block('course', course?.title ?? ''),
+      block('lesson', lesson ? `${lesson.title}: ${(lesson.objectives ?? []).join('; ')}` : ''),
+      block('concept', concept?.name ?? ''),
+      block('learner_explanation', explanation),
+      `Score how well the explanation shows real understanding of the concept.
+- 1.0: correct, complete and could teach it back, with an example or a reason it works.
+- 0.8–0.99: correct and complete enough to build on; at most a minor imprecision.
+- 0.5–0.79: the gist is right but a piece is missing or fuzzy.
+- 0.2–0.49: fragments or a serious gap.
+- 0–0.19: wrong or empty.
+Return {"score":0.0,"missing":["at most 3 short gaps, empty when none"],"feedback":"2–4 sentences to the learner: what is right, what is missing, one question that would close the gap"}`,
     ),
   }
 }

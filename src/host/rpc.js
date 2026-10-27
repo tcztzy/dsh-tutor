@@ -8,7 +8,7 @@ import { publicCode, publicMessage } from './jobs.js'
 import { MAX_SPEECH_BYTES } from './speech.js'
 
 const ID = prefix => new RegExp(`^${prefix}_[a-z0-9]{6,40}$`, 'u')
-const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte'), asd: ID('asd'), evd: ID('evd') }
+const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte'), asd: ID('asd'), evd: ID('evd'), cpt: ID('cpt') }
 
 function need(payload, key, prefix) {
   const value = payload?.[key]
@@ -153,6 +153,12 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'lesson/correct': payload => ({ job: lessons.correct({ scope: scopeOf(payload), stepIndex: payload.stepIndex, anchorStepId: payload.anchorStepId, item: payload.item, response: payload.response, grade: payload.grade }) }),
     'lesson/position': payload => lessons.savePosition({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les'), stepIndex: payload.stepIndex }),
     'lesson/complete': payload => lessons.complete({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les'), selfRating: Number(payload.selfRating) || undefined }),
+    'lesson/assess': payload => lessons.assess({
+      courseId: need(payload, 'courseId', 'crs'),
+      lessonId: need(payload, 'lessonId', 'les'),
+      conceptId: need(payload, 'conceptId', 'cpt'),
+      explanation: typeof payload.explanation === 'string' ? payload.explanation.slice(0, 4000) : '',
+    }),
     'lesson/handout': payload => lessons.handout({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les'), force: payload.force === true }),
     'lesson/practice': payload => lessons.practice({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les') }),
     'unit/sheet': payload => lessons.unitSheet({ courseId: need(payload, 'courseId', 'crs'), unitId: need(payload, 'unitId', 'unt'), force: payload.force === true }),
