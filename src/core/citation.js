@@ -33,29 +33,42 @@ export function verifyCitation(citation, index) {
 
 // Keep cited content, drop the claim that cannot be checked. Returns the same
 // sheet with verified citations enriched and bad ones removed, plus a report.
+// Check one holder's citation in place: keep and enrich it, or drop it and
+// report why. The content around it is never touched.
+function applyCite(holder, index, dropped) {
+  if (!holder?.cite) return false
+  const check = verifyCitation(holder.cite, index)
+  if (check.ok) {
+    holder.cite = {
+      materialId: check.material.id,
+      materialTitle: check.material.title,
+      page: check.page,
+      source: String(holder.cite.source ?? '').slice(0, 200),
+    }
+    return true
+  }
+  dropped.push({ reason: check.reason, page: holder.cite.page ?? null, title: holder.title ?? holder.name ?? '' })
+  holder.cite = null
+  return false
+}
+
 export function sanitizeSheetCites(sheet, materials) {
   const index = materialIndex(materials)
   const dropped = []
   let kept = 0
   for (const section of sheet?.sections ?? []) {
-    for (const item of section.items ?? []) {
-      if (!item?.cite) continue
-      const check = verifyCitation(item.cite, index)
-      if (check.ok) {
-        item.cite = {
-          materialId: check.material.id,
-          materialTitle: check.material.title,
-          page: check.page,
-          source: String(item.cite.source ?? '').slice(0, 200),
-        }
-        kept += 1
-      } else {
-        dropped.push({ reason: check.reason, page: item.cite.page ?? null, title: item.title ?? '' })
-        item.cite = null
-      }
-    }
+    for (const item of section.items ?? []) if (applyCite(item, index, dropped)) kept += 1
   }
   return { sheet, kept, dropped }
+}
+
+// A handout cites from its key points; the example and glossary stay prose.
+export function sanitizeHandoutCites(handout, materials) {
+  const index = materialIndex(materials)
+  const dropped = []
+  let kept = 0
+  for (const point of handout?.points ?? []) if (applyCite(point, index, dropped)) kept += 1
+  return { handout, kept, dropped }
 }
 
 // One line per material for the prompt, so the model cites ids that exist.

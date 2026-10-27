@@ -390,7 +390,15 @@ export function normalizePractice(raw, conceptIds = []) {
 export function normalizeHandout(raw) {
   const points = list(raw?.points ?? raw?.keyPoints, 6, point => {
     const title = text(typeof point === 'string' ? point : point?.title ?? point?.point, 160)
-    return title ? { title, oneLine: text(point?.oneLine ?? point?.summary, 300), detail: text(point?.detail, 600) } : null
+    if (!title) return null
+    const page = Math.round(Number(point?.cite?.page ?? point?.page))
+    const materialId = text(point?.cite?.materialId ?? point?.materialId, 40)
+    return {
+      title,
+      oneLine: text(point?.oneLine ?? point?.summary, 300),
+      detail: text(point?.detail, 600),
+      cite: Number.isFinite(page) && page > 0 ? { ...(materialId ? { materialId } : {}), page, source: text(point?.cite?.source ?? point?.source, 120) } : null,
+    }
   })
   if (!points.length) throw new Error('the handout has no key points')
   const example = raw?.example && typeof raw.example === 'object' ? {

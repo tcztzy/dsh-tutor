@@ -6,7 +6,7 @@
 
 import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeStep, stepJson } from '../core/board-fix.js'
 import { boardToPlainText } from '../core/board-script.js'
-import { sanitizeSheetCites, sourcesBlock } from '../core/citation.js'
+import { sanitizeHandoutCites, sanitizeSheetCites, sourcesBlock } from '../core/citation.js'
 import { conceptIndex, conceptTypeMap, findLesson, insertLesson, lessonAfter, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text } from '../core/course-model.js'
 import { answersTo, correctEvidence, itemKey, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
 import { QUALITATIVE_PASS, lessonGate, recordQualitative } from '../core/gate.js'
@@ -740,17 +740,29 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     const board = await store.readJson(store.paths.board(courseId, lessonId), null)
     if (!board?.steps?.length) throw new TutorError('no-board', 'The board is not written yet. Try again once its first step is up.')
     const job = jobs.start('lesson/handout', async api => {
+      const materials = await readMaterials(store, course.materialIds ?? [])
+      const meta = materials.map(entry => entry.meta)
+      const query = `${row.lesson.title} ${row.lesson.objectives.join(' ')} ${row.lesson.concepts.map(concept => concept.name).join(' ')}`
       const made = await generateJson(llm, {
         purpose: 'teach',
         effort: 'lowest',
-        prompt: handoutPrompt({ course, lesson: row.lesson, language: course.language, board: boardToPlainText(board, { maxChars: 12000 }) }),
+        prompt: handoutPrompt({
+          course,
+          lesson: row.lesson,
+          language: course.language,
+          board: boardToPlainText(board, { maxChars: 12000 }),
+          sources: sourcesBlock(meta),
+          passages: passagesFor(materials, query, 6000),
+        }),
         maxTokens: 5000,
         signal: api.signal,
         normalize: normalizeHandout,
       })
-      const saved = { ...made, title: made.title || row.lesson.title, lessonId, createdAt: stamp() }
+      // Points whose citation cannot be checked keep their text, not the claim.
+      const { handout, dropped } = sanitizeHandoutCites(made, meta)
+      const saved = { ...handout, title: handout.title || row.lesson.title, lessonId, createdAt: stamp() }
       await store.writeJson(store.paths.handout(courseId, lessonId), saved)
-      return { handout: saved }
+      return { handout: saved, dropped }
     }, { key: `handout:${courseId}:${lessonId}`, meta: { courseId, lessonId } })
     return { job }
   }

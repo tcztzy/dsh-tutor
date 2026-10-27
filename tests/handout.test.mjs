@@ -41,7 +41,7 @@ function fakeLlm() {
     if (user.includes('Design the course blueprint')) return JSON.stringify(blueprint)
     if (user.includes('For EACH lesson write')) return JSON.stringify({ lessons: {} })
     if (user.includes('Teach this lesson')) return [{ say: '先看公式。', ops: [{ t: 'title', text: '弹簧的力' }, { t: 'math', tex: 'F=-kx' }] }, { say: '负号表示方向相反。', ops: [{ t: 'note', text: '负号 = 方向相反' }] }, { say: '总结。', ops: [{ t: 'p', text: '回复力' }] }].map(line => JSON.stringify(line)).join('\n')
-    if (user.includes('Write the handout from what the board taught')) return JSON.stringify({ title: '', summary: '回复力。', points: [{ title: '$F=-kx$', oneLine: '方向相反' }], questions: [{ question: 'Q', answer: 'A' }] })
+    if (user.includes('Write the handout from what the board taught')) return JSON.stringify({ title: '', summary: '回复力。', points: [{ title: '$F=-kx$', oneLine: '方向相反', cite: { materialId: 'mat_forged0000', page: 3 } }], questions: [{ question: 'Q', answer: 'A' }] })
     return '{}'
   }
   return {
@@ -81,6 +81,8 @@ test('a lesson handout is made from its board once, then kept', async () => {
 
     const made = await finish(jobs, (await lessons.handout({ courseId, lessonId })).job)
     assert.equal(made.handout.title, '弹簧的力', 'the lesson title stands in for none')
+    assert.equal(made.handout.points[0].cite, null, 'a citation to a material this course does not have is dropped')
+    assert.equal(made.dropped[0].reason, 'unknown-material')
     const call = llm.calls.find(entry => entry.user.includes('Write the handout'))
     assert.match(call.user, /<what_the_board_taught>[\s\S]*F=-kx[\s\S]*负号表示方向相反/u)
     assert.equal(call.effort, 'lowest')

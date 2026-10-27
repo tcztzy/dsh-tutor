@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { materialIndex, sanitizeSheetCites, sourcesBlock, verifyCitation } from '../src/core/citation.js'
+import { materialIndex, sanitizeHandoutCites, sanitizeSheetCites, sourcesBlock, verifyCitation } from '../src/core/citation.js'
 
 const MATERIALS = [
   { id: 'mat_aaaaaaaa', title: '讲义', pages: 12 },
@@ -53,6 +53,25 @@ test('a sheet keeps cited content and drops citations it cannot check', () => {
   assert.equal(outOfRange.cite, null)
   assert.equal(plain.cite, undefined)
   assert.equal(forged.text, '伪造来源', 'the content stays even when the claim goes')
+})
+
+test('a handout point keeps its text and loses an unverifiable citation', () => {
+  const handout = {
+    title: '胡克定律',
+    points: [
+      { title: '$F=-kx$', oneLine: '力与位移反向', cite: { materialId: 'mat_aaaaaaaa', page: 4 } },
+      { title: '弹性限度', oneLine: '超过就不再成正比', cite: { materialId: 'mat_aaaaaaaa', page: 40 } },
+      { title: '劲度系数', oneLine: '弹簧的硬度' },
+    ],
+  }
+  const { handout: checked, kept, dropped } = sanitizeHandoutCites(handout, MATERIALS)
+  assert.equal(kept, 1)
+  assert.deepEqual(dropped.map(entry => entry.reason), ['page-out-of-range'])
+  assert.equal(checked.points[0].cite.page, 4)
+  assert.equal(checked.points[0].cite.materialTitle, '讲义')
+  assert.equal(checked.points[1].cite, null)
+  assert.equal(checked.points[1].oneLine, '超过就不再成正比')
+  assert.equal(checked.points[2].cite, undefined)
 })
 
 test('the prompt sees one bracketed line per material', () => {

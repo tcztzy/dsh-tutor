@@ -398,14 +398,19 @@ export function correctionPrompt({ course, lesson, language, boardSoFar, item, r
 }
 
 // A printable one-page handout of a lesson, from what its board taught.
-export function handoutPrompt({ course, lesson, language, board }) {
+export function handoutPrompt({ course, lesson, language, board, sources, passages }) {
   return {
-    system: join(PERSONA, `You turn a lesson into a one-page handout a learner keeps: faithful to what was taught, short, exact. ${languageRule(language)}`, JSON_ONLY),
+    system: join(PERSONA, `You turn a lesson into a one-page handout a learner keeps: faithful to what was taught, short, exact. You never claim a source you do not have. ${languageRule(language)}`, JSON_ONLY),
     user: join(
       block('course', course ? course.title : ''),
       block('lesson', `${lesson.title}: ${lesson.objectives?.join('; ') ?? ''}`),
       block('what_the_board_taught', board),
-      'Write the handout from what the board taught; add nothing it did not teach. "points": the 3–6 key points in order, each with a "oneLine" a learner could repeat to a friend. "example": one worked example with numbers, solved step by step (one step per line). "mistakes": 2–4 common mistakes with the fix. "glossary": the terms the lesson introduced. "questions": 3 short questions to check oneself, with answers. Use inline math $…$ for formulas.\n\nReturn {"title":"…","summary":"2–3 sentences: what this lesson was about","points":[{"title":"…","oneLine":"…","detail":"…"}],"example":{"problem":"…","steps":["…"],"answer":"…"},"mistakes":[{"mistake":"…","fix":"…"}],"glossary":[{"term":"…","meaning":"…"}],"questions":[{"question":"…","answer":"…"}]}',
+      block('sources', sources),
+      block('source_passages', passages),
+      `Write the handout from what the board taught; add nothing it did not teach. "points": the 3–6 key points in order, each with a "oneLine" a learner could repeat to a friend. "example": one worked example with numbers, solved step by step (one step per line). "mistakes": 2–4 common mistakes with the fix. "glossary": the terms the lesson introduced. "questions": 3 short questions to check oneself, with answers. Use inline math $…$ for formulas.
+A point that restates a source passage carries "cite":{"materialId":"mat_…","page":n} taken from <sources>; omit "cite" otherwise — an invented citation is worse than none.
+
+Return {"title":"…","summary":"2–3 sentences: what this lesson was about","points":[{"title":"…","oneLine":"…","detail":"…","cite":{"materialId":"mat_…","page":12,"source":"…"}}],"example":{"problem":"…","steps":["…"],"answer":"…"},"mistakes":[{"mistake":"…","fix":"…"}],"glossary":[{"term":"…","meaning":"…"}],"questions":[{"question":"…","answer":"…"}]}`,
     ),
   }
 }
