@@ -6,6 +6,7 @@
 
 import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeStep, stepJson } from '../core/board-fix.js'
 import { boardToPlainText } from '../core/board-script.js'
+import { sanitizeSheetCites, sourcesBlock } from '../core/citation.js'
 import { conceptIndex, conceptTypeMap, findLesson, insertLesson, lessonAfter, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text } from '../core/course-model.js'
 import { answersTo, correctEvidence, itemKey, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
 import { QUALITATIVE_PASS, lessonGate, recordQualitative } from '../core/gate.js'
@@ -767,14 +768,15 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const outline = outlineForPrompt({ units: [unit] })
       const sheet = await generateJson(llm, {
         purpose: 'teach',
-        prompt: cheatsheetPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, passages: passagesFor(materials, outline, 9000), language: course.language }),
+        prompt: cheatsheetPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, sources: sourcesBlock(materials.map(entry => entry.meta)), passages: passagesFor(materials, outline, 9000), language: course.language }),
         maxTokens: 9000,
         signal: api.signal,
         normalize: normalizeCheatsheet,
       })
-      const saved = { ...sheet, title: sheet.title || unit.title, unitId, createdAt: stamp() }
+      const { sheet: checked, dropped } = sanitizeSheetCites(sheet, materials.map(entry => entry.meta))
+      const saved = { ...checked, title: checked.title || unit.title, unitId, createdAt: stamp() }
       await store.writeJson(store.paths.sheet(courseId, unitId), saved)
-      return { sheet: saved }
+      return { sheet: saved, dropped }
     }, { key: `sheet:${courseId}:${unitId}`, meta: { courseId, unitId } })
     return { job }
   }

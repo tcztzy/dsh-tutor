@@ -493,17 +493,19 @@ export function projectReviewPrompt({ project, submission, language }) {
 
 // ── study materials ─────────────────────────────────────────────────────────
 
-export function cheatsheetPrompt({ scopeTitle, outline, passages, language, focus }) {
+export function cheatsheetPrompt({ scopeTitle, outline, passages, language, focus, sources }) {
   return {
-    system: join(PERSONA, `You make dense, exam-ready cheat sheets that a student can print on one or two pages. ${languageRule(language)}`, JSON_ONLY),
+    system: join(PERSONA, `You make dense, exam-ready cheat sheets that a student can print on one or two pages. You never claim a source you do not have. ${languageRule(language)}`, JSON_ONLY),
     user: join(
       block('scope', scopeTitle),
       block('outline', outline),
+      block('sources', sources),
       block('source_passages', passages),
       block('focus', focus),
-      `Write a cheat sheet organized by THEME (not by chapter): group what belongs together even if it was taught in different places, and link related sections. Items are terse: definitions, formulas (LaTeX in "tex"), key facts, worked mini-examples, comparisons, and common pitfalls. Cite the page or slide when an item comes from a source passage. 6–14 sections, 3–10 items each.
+      `Write a cheat sheet organized by THEME (not by chapter): group what belongs together even if it was taught in different places, and link related sections. Items are terse: definitions, formulas (LaTeX in "tex"), key facts, worked mini-examples, comparisons, and common pitfalls. 6–14 sections, 3–10 items each.
+Cite only from <sources>: "materialId" must be one of the bracketed ids and "page" must be inside that material's page count. A passage is marked with its source; cite the page it shows. Omit "cite" entirely when an item is not from a source — an invented citation is worse than none.
 
-Return {"title":"…","sections":[{"title":"…","related":["<other section title>"],"items":[{"kind":"definition|formula|fact|tip|pitfall|example|compare","title":"…","text":"…","tex":"…","cite":{"page":12,"source":"…"}}]}]}`,
+Return {"title":"…","sections":[{"title":"…","related":["<other section title>"],"items":[{"kind":"definition|formula|fact|tip|pitfall|example|compare","title":"…","text":"…","tex":"…","cite":{"materialId":"mat_…","page":12,"source":"…"}}]}]}`,
     ),
   }
 }

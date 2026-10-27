@@ -7,6 +7,7 @@ import { assertId, newId } from '../core/ids.js'
 import { createCard, review } from '../core/srs.js'
 import { buildIndex, documentParts, formatPassages, passageRange, search, snippetOf, spreadPassages } from '../core/retrieval.js'
 import { materialImages, passagesFor, readMaterials, readProfile } from './context.js'
+import { sanitizeSheetCites, sourcesBlock } from '../core/citation.js'
 import { generateJson, generateSteps, generateText, TutorError } from './generate.js'
 import { ingestFile, ingestUrl, MAX_UPLOAD_BYTES } from './materials.js'
 import { assistPrompt, cheatsheetPrompt, detectLanguage, digestPartPrompt, digestPrompt, flashcardsPrompt, materialBriefPrompt, quizPrompt, shortPrompt, summaryPrompt } from './prompts.js'
@@ -229,16 +230,20 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   function makeSheet({ materialIds, focus }) {
     return jobs.start('studio/sheet', async api => {
       const scope = await scopeOf(materialIds)
-      const sheet = await generateJson(llm, {
+      const meta = scope.materials.map(entry => entry.meta)
+      const generated = await generateJson(llm, {
         purpose: 'teach',
-        prompt: cheatsheetPrompt({ scopeTitle: scope.title, outline: scope.outline, passages: passagesFor(scope.materials, text(focus, 300) || scope.outline, 22000), language: scope.language, focus: text(focus, 300) }),
+        prompt: cheatsheetPrompt({ scopeTitle: scope.title, outline: scope.outline, sources: sourcesBlock(meta), passages: passagesFor(scope.materials, text(focus, 300) || scope.outline, 22000), language: scope.language, focus: text(focus, 300) }),
         maxTokens: 10000,
         signal: api.signal,
         normalize: normalizeCheatsheet,
       })
+      // A citation that names a material or page the course does not have is
+      // dropped; the item itself stays.
+      const { sheet, dropped } = sanitizeSheetCites(generated, meta)
       const item = { id: newId('chs'), kind: 'cheatsheet', title: sheet.title || scope.title, language: scope.language, materialIds: scope.ids, sheet, createdAt: stamp() }
       await store.writeJson(store.paths.item('sheets', item.id), item)
-      return { item }
+      return { item, dropped }
     })
   }
 
@@ -255,7 +260,8 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         signal,
         normalize: normalizeCheatsheet,
       })
-      const item = { id: newId('chs'), kind: 'cheatsheet', title: sheet.title || subject, language, materialIds: [], sheet, createdAt: stamp() }
+      const { sheet: checked } = sanitizeSheetCites(sheet, [])
+      const item = { id: newId('chs'), kind: 'cheatsheet', title: checked.title || subject, language, materialIds: [], sheet: checked, createdAt: stamp() }
       await store.writeJson(store.paths.item('sheets', item.id), item)
       return item
     })()

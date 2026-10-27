@@ -438,12 +438,13 @@ export function normalizeCheatsheet(raw) {
       const tex = text(item?.tex ?? item?.latex, 400)
       if (!body && !tex) return null
       const page = Math.round(Number(item?.cite?.page ?? item?.page))
+      const materialId = text(item?.cite?.materialId ?? item?.materialId, 40)
       return {
         kind: SHEET_KINDS.includes(item?.kind) ? item.kind : 'fact',
         title: text(item?.title ?? item?.term, 120),
         text: body,
         tex,
-        cite: Number.isFinite(page) && page > 0 ? { page, source: text(item?.cite?.source ?? item?.source, 120) } : null,
+        cite: Number.isFinite(page) && page > 0 ? { ...(materialId ? { materialId } : {}), page, source: text(item?.cite?.source ?? item?.source, 120) } : null,
       }
     })
     if (!items.length) return null
