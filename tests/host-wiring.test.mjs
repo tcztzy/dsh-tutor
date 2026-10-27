@@ -140,6 +140,22 @@ test('the host row serves the browser channel, HTTP routes and the preset runtim
     await assert.rejects(call('samples/import', { id: '../secret' }), /Unknown sample/u)
     // A question may name the job writing its board; the id is checked like any other.
     await assert.rejects(call('lesson/reexplain', { scope: { kind: 'lesson', courseId: sample.id, lessonId: firstLesson.id, jobId: 'job_../../x' } }), error => error.code === 'aha-tutor/invalid')
+
+    // A lesson does not count as finished until its concepts clear the gate.
+    const gated = await follow(await call('course/start', { goal: 'learn vectors', quick: true }))
+    await follow(await call('course/intake', { courseId: gated.courseId, timeline: 'intensive' }))
+    const gatedDetail = await call('course/get', { courseId: gated.courseId })
+    const gatedLesson = gatedDetail.course.units[0].lectures[0].lessons[0]
+    const blocked = await call('lesson/complete', { courseId: gated.courseId, lessonId: gatedLesson.id })
+    assert.equal(blocked.blocked, true)
+    assert.equal(blocked.completed, false)
+    assert.equal(blocked.gate.passed, false)
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await call('lesson/record', { courseId: gated.courseId, lessonId: gatedLesson.id, evidence: { kind: 'practice', score: 1, confidence: 'sure' } })
+    }
+    const cleared = await call('lesson/complete', { courseId: gated.courseId, lessonId: gatedLesson.id })
+    assert.equal(cleared.completed, true)
+    assert.equal(cleared.gate.passed, true)
   } finally {
     harness.dispose()
     assert.throws(() => getRuntime(), /still starting/u)

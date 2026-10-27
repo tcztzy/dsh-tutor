@@ -609,10 +609,49 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     return { ok: true }
   }
 
-  // Finish a lesson; adapt the course if the evidence says so.
+  // A remedial lesson for the concepts a completion is weak on, unless the
+  // lesson after this one already is that lesson (retrying must not spam).
+  async function ensureRemedial(course, row, lessonId, recommendation) {
+    if (recommendation.action !== 'remediate' || row.lesson.kind === 'remedial') return null
+    const weak = row.lesson.concepts.filter(concept => recommendation.conceptIds.includes(concept.id))
+    if (!weak.length) return null
+    const after = lessonAfter(course, lessonId)?.lesson
+    const same = after?.kind === 'remedial' && after.concepts.length === weak.length && after.concepts.every(concept => weak.some(entry => entry.id === concept.id))
+    if (same) return after
+    const inserted = insertLesson(course, lessonId, {
+      title: `${course.language?.startsWith('zh') ? '巩固：' : 'Revisit: '}${weak.map(concept => concept.name).join(course.language?.startsWith('zh') ? '、' : ', ') || row.lesson.title}`,
+      summary: row.lesson.summary,
+      objectives: row.lesson.objectives,
+      concepts: weak,
+      estMinutes: Math.min(15, row.lesson.estMinutes || 12),
+      kind: 'remedial',
+    })
+    await courses.saveCourse(course)
+    return inserted
+  }
+
+  // Finish a lesson once its concepts clear the gate; adapt the course when
+  // the evidence says so. A blocked completion marks nothing done, so the
+  // learner can practise and try again — or take the remedial lesson it adds.
   async function complete({ courseId, lessonId, selfRating }) {
     const { course, row } = await context(courseId, lessonId)
     if (selfRating) await record({ courseId, lessonId, evidence: { kind: 'self', rating: selfRating } })
+    const before = await readProgress(store, courseId)
+    const checked = row.lesson.concepts.map(concept => before.concepts?.[concept.id] ?? createConceptState(concept.id, concept.name))
+    const gate = lessonGate(checked, conceptTypeMap(course))
+    const checkedRecommendation = recommendNext(checked)
+    if (!gate.passed) {
+      const inserted = await ensureRemedial(course, row, lessonId, checkedRecommendation)
+      learner.noteLesson({ course, lesson: row.lesson, states: checked }).catch(() => undefined)
+      return {
+        completed: false,
+        blocked: true,
+        gate,
+        recommendation: checkedRecommendation,
+        inserted,
+        next: inserted ?? lessonAfter(course, lessonId)?.lesson ?? null,
+      }
+    }
     const progress = await store.updateJson(store.paths.progress(courseId), null, value => {
       const next = value ?? { courseId, lessons: {}, concepts: {}, reviews: {}, events: [] }
       next.lessons ??= {}
@@ -622,22 +661,9 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     })
     const states = row.lesson.concepts.map(concept => progress.concepts?.[concept.id]).filter(Boolean)
     const recommendation = recommendNext(states)
-    let inserted = null
-    const alreadyRemedial = row.lesson.kind === 'remedial'
-    if (recommendation.action === 'remediate' && !alreadyRemedial) {
-      const weak = row.lesson.concepts.filter(concept => recommendation.conceptIds.includes(concept.id))
-      inserted = insertLesson(course, lessonId, {
-        title: `${course.language?.startsWith('zh') ? '巩固：' : 'Revisit: '}${weak.map(concept => concept.name).join(course.language?.startsWith('zh') ? '、' : ', ') || row.lesson.title}`,
-        summary: row.lesson.summary,
-        objectives: row.lesson.objectives,
-        concepts: weak,
-        estMinutes: Math.min(15, row.lesson.estMinutes || 12),
-        kind: 'remedial',
-      })
-      await courses.saveCourse(course)
-    }
+    const inserted = await ensureRemedial(course, row, lessonId, recommendation)
     learner.noteLesson({ course, lesson: row.lesson, states }).catch(() => undefined)
-    return { recommendation, inserted, next: lessonAfter(course, lessonId)?.lesson ?? null }
+    return { completed: true, gate, recommendation, inserted, next: lessonAfter(course, lessonId)?.lesson ?? null }
   }
 
   // Practice for one lesson. The first unit's comes with the course; a later

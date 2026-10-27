@@ -102,6 +102,7 @@ function Completion({ courseId, lessonId, onClose }) {
       </div>
       {busy ? <Spinner /> : null}
     </> : <div className="aha-col">
+      {result.blocked ? <div className="aha-feedback">{t('gateBlocked', { names: (result.gate?.blocking ?? []).map(item => item.name).join(', ') })}</div> : null}
       {result.inserted ? <div className="aha-feedback">{t('remedialAdded', { title: result.inserted.title })}</div> : null}
       {result.recommendation?.action === 'challenge' ? <div className="aha-feedback" data-ok="true">{t('challengeNote')}</div> : null}
       <div className="aha-row">
