@@ -52,11 +52,20 @@
 | 里程碑 | 交付 | 验收 |
 | --- | --- | --- |
 | M0 | 本文件；确认接入点 | 评审通过 |
-| M1 | `gate.js` + `tests/gate.test.mjs` + 练习提交路径接入 | 门禁不可被模型直接写入；封顶/阈值/证据下限有单测 |
-| M2 | `course-model` 支持 concept 类型与前置；大纲生成校验；UI 显示门禁 | 未过门不能标记「已学完下一讲」；迁移旧课程包 |
-| M3 | 讲义与板书生成后的引用校验（引用的页码/材料必须存在） | 伪造引用被拒并有测试 |
-| M4 | 课程内研究、解题、可视化工具 | 会话内可用，且不绕过门禁 |
-| M5 | 文档、i18n（zh/en 同键）、打包 | `pnpm run check` 通过；scratch profile 手测 |
+| M1 | `src/core/gate.js`：类型阈值、近期加权、信心封顶、定性评估 | ✅ 完成（`gate.test.mjs`，13 例） |
+| M2 | concept 类型 + 前置 + 门禁状态；完成一讲须过门；定性讲解评估 | ✅ 完成（`objective-graph.test.mjs`、`host-wiring` 端到端） |
+| M3 | 速查表与讲义的引用校验：材料与页码必须存在 | ✅ 完成（`citation.test.mjs`；伪造引用被丢弃、内容保留） |
+| M4 | 课程内「查一查」：联网研究与分步解题 | ✅ 完成（`lesson/explore`；不产生学习证据） |
+| M4* | 动画与视频 | 委托：交给已安装的动画插件（Manim / Remotion），课程只做静态图；不跨插件调用 |
+| M5 | 文档、i18n（zh/en 同键）、打包 | ✅ 文档与 README 更新；`pnpm run check` 通过；scratch profile 手测未做 |
+
+### 实现中定下的边界
+
+- **旧课程**：知识点缺 `type` 时按 `memory` 判定，保证存量课程不会因为新门禁永久锁死。
+- **定性类型**：只有 `concept` / `design` 需要讲解评估；生成器被要求「大多数是 memory/procedure」，避免把整门课变成口头考试。
+- **引用**：校验失败只丢引用，不丢内容；速查表与讲义都会返回 `dropped` 报告。
+- **探索**：`lesson/explore` 的联网结果带编号来源；没有搜索服务时明确说 `skipped: 'unavailable'`，不假装查过。
+- **可视化**：不调用其他插件的工具（它们只注册工具、不暴露宿主服务）；动画由会话中安装的动画插件完成，课程界面只做静态图。
 
 通用验收：`pnpm run check`（全部测试 + 重新构建 `lib/` + 打包）必须通过；UI 改动需在独立 `DSH_HOME` 的 scratch profile 中手测；未经明确授权不 `npm publish`、不打 tag、不发 Release。
 
