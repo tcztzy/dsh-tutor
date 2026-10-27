@@ -6,8 +6,9 @@
 
 import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeStep, stepJson } from '../core/board-fix.js'
 import { boardToPlainText } from '../core/board-script.js'
-import { conceptIndex, findLesson, insertLesson, lessonAfter, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text } from '../core/course-model.js'
+import { conceptIndex, conceptTypeMap, findLesson, insertLesson, lessonAfter, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text } from '../core/course-model.js'
 import { answersTo, correctEvidence, itemKey, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
+import { lessonGate } from '../core/gate.js'
 import { OBJECTIVE_KINDS } from '../core/grading.js'
 import { assertId, newId } from '../core/ids.js'
 import { cleanResponse, earlierGrade, fixItem, itemForCheck, normalizeItemVerdict, regrade, responseText } from '../core/item-fix.js'
@@ -57,6 +58,10 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       next: lessonAfter(course, lessonId)?.lesson ?? null,
       job: jobs.running(`board:${courseId}:${lessonId}`),
       mastery: Object.fromEntries(row.lesson.concepts.map(concept => [concept.id, masteryPercent(progress.concepts?.[concept.id] ?? createConceptState(concept.id, concept.name))])),
+      gate: lessonGate(
+        row.lesson.concepts.map(concept => progress.concepts?.[concept.id] ?? createConceptState(concept.id, concept.name)),
+        conceptTypeMap(course),
+      ),
     }
   }
 

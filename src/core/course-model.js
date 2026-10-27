@@ -2,6 +2,7 @@
 // into the stored shape, and helpers answer questions about a course and its
 // progress. Every limit here protects the UI and the token budget.
 
+import { normalizeType } from './gate.js'
 import { newId } from './ids.js'
 import { normalizePlot } from './plot.js'
 
@@ -94,14 +95,64 @@ export function intakeSummary(questionnaire, answers) {
 
 // ── blueprint ───────────────────────────────────────────────────────────────
 
+// A concept is a node of the objective graph: what it is, how it is gated
+// (type) and what must come first (prerequisites, by concept id or name).
+// Legacy blueprints list bare names; they stay valid and gate as memory.
 function normalizeConcepts(raw, fallbackName) {
   const concepts = list(raw, LIMITS.concepts, item => {
     const name = text(typeof item === 'string' ? item : item?.name ?? item?.title, 80)
     if (!name) return null
-    return { id: typeof item?.id === 'string' && /^cpt_[a-z0-9]+$/u.test(item.id) ? item.id : newId('cpt'), name }
+    const id = typeof item?.id === 'string' && /^cpt_[a-z0-9]+$/u.test(item.id) ? item.id : newId('cpt')
+    const type = normalizeType(typeof item === 'object' ? item?.type ?? item?.kind : undefined)
+    const prerequisites = typeof item === 'object'
+      ? strings(item?.prerequisites ?? item?.requires, 4, 80)
+      : []
+    return { id, name, type, ...(prerequisites.length ? { prerequisites } : {}) }
   })
-  if (!concepts.length && fallbackName) concepts.push({ id: newId('cpt'), name: text(fallbackName, 80) })
+  if (!concepts.length && fallbackName) concepts.push({ id: newId('cpt'), name: text(fallbackName, 80), type: 'memory' })
   return concepts
+}
+
+// Resolve prerequisite names to ids, drop unknown / self / duplicate edges and
+// any edge that would close a cycle, so the gate can never deadlock a course.
+function linkPrerequisites(units) {
+  const all = []
+  for (const unit of units) for (const lecture of unit.lectures) for (const lesson of lecture.lessons) for (const concept of lesson.concepts) all.push(concept)
+  const byId = new Map(all.map(concept => [concept.id, concept]))
+  const byName = new Map()
+  for (const concept of all) if (!byName.has(concept.name)) byName.set(concept.name, concept.id)
+
+  // Edges are committed as they are kept, so a later edge is judged against
+  // the prerequisites this pass already accepted, not against the raw input.
+  const resolved = new Map()
+  const dependsOn = (id, target, seen = new Set()) => {
+    if (id === target) return true
+    if (seen.has(id)) return false
+    seen.add(id)
+    return (resolved.get(id) ?? []).some(next => dependsOn(next, target, seen))
+  }
+
+  for (const concept of all) {
+    if (!Array.isArray(concept.prerequisites)) continue
+    const kept = []
+    for (const raw of concept.prerequisites) {
+      const ref = text(typeof raw === 'string' ? raw : raw?.id ?? raw?.name, 80)
+      const id = byId.has(ref) ? ref : byName.get(ref)
+      if (!id || id === concept.id || kept.includes(id)) continue
+      if (dependsOn(id, concept.id)) continue
+      kept.push(id)
+      resolved.set(concept.id, kept)
+    }
+    if (kept.length) concept.prerequisites = kept.slice(0, 4)
+    else delete concept.prerequisites
+  }
+}
+
+// Every concept's gate type, for callers that hold a course but no lesson.
+export function conceptTypeMap(course) {
+  const types = {}
+  for (const [id, concept] of conceptIndex(course)) types[id] = normalizeType(concept.type)
+  return types
 }
 
 function keepId(value, prefix) {
@@ -205,6 +256,7 @@ export function safeRelativePath(value) {
 export function normalizeBlueprint(raw, { language } = {}) {
   const units = normalizeUnits(raw?.units)
   if (!units.length) throw new Error('blueprint has no usable units')
+  linkPrerequisites(units)
   return {
     title: text(raw?.title, 120) || units[0].title,
     subtitle: text(raw?.subtitle ?? raw?.tagline, 200),
